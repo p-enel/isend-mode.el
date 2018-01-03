@@ -360,13 +360,13 @@ The region is expanded so that no line is only partially sent."
          (end (cdr bds)))
 
     ;; Expand the region to span whole lines
-    (goto-char beg)
-    (setq beg (line-beginning-position))
-    (goto-char end)
-    (setq end (line-end-position))
-    (when (= beg (point-max))
-      (error "Nothing more to send!"))
-    (cons beg end)))
+    ;; (goto-char beg)
+    ;; (setq beg (line-beginning-position))
+    ;; (goto-char end)
+    ;; (setq end (line-end-position))
+    ;; (when (= beg (point-max))
+    ;;   (error "Nothing more to send!"))
+    (cons beg (+ end 1))))
 
 (defun isend--next-line ()
   "Move point to the next line.
