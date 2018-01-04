@@ -299,8 +299,9 @@ the region is active, all lines spanned by it are sent."
          (funcall (key-binding (kbd "RET"))))))))
 
  ;; Move point to the next line
- (when isend-forward-line
-   (isend--next-line)))
+ (if (not (region-active-p))
+     (when isend-forward-line
+       (isend--next-line))))
 
 
 (defun isend-send-buffer ()
