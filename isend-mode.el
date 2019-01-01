@@ -385,7 +385,7 @@ Empty lines are skipped if `isend-skip-empty-lines' is non-nil."
 
 (defun isend--ipython-cpaste (buf-name)
   ""
-  (insert "%cpaste") (isend--term-send-input)
+  (insert "%cpaste\n") (isend--term-send-input)
   (insert-buffer-substring buf-name) (isend--term-send-input)
   (insert "--"))
 
