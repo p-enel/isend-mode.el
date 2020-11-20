@@ -3,6 +3,7 @@
 ;; Copyright (C) 2012 François Févotte
 ;; Author:  François Févotte <fevotte@gmail.com>
 ;; URL:     https://github.com/ffevotte/isend-mode.el
+;; Package-Version: 20190201.832
 ;; Version: 0.2
 
 ;; This file is NOT part of Emacs.
@@ -62,6 +63,9 @@
 ;; Get rid of warning about `term-send-input' not being defined.
 (require 'term)
 
+;; if-let
+(require 'subr-x)
+
 
 
 ;; Customization variables
@@ -115,28 +119,42 @@ in which whitespace terminates definitions."
   :type  'boolean)
 
 ;;;###autoload
-(defcustom isend-send-line-function 'insert-buffer-substring
+(defcustom isend-bracketed-paste nil
+  "If non-nil, `isend-send' will use \"bracketed paste\".
+
+Bracketed paste surrounds the contents it sends with escape
+sequences indicating to the underlying process that this content
+is being pasted."
+  :group 'isend
+  :type  'boolean)
+
+;;;###autoload
+(defcustom isend-send-line-function nil
   "Function used by `isend-send' to send a single line.
 
-This function takes as argument the name of a buffer containing
-the text to be sent.
+This function is called in a buffer containing the text to be
+sent. It can modify it as needed before it is sent to the
+process. It also receives as argument the destination buffer, in
+case some interaction with it would be useful.
 
 Possible values include:
-- `insert-buffer-substring' (default)
+- nil (default)
 - `isend--ipython-cpaste'
 - `isend--ipython-paste'"
   :group 'isend
   :type  'function)
 
 ;;;###autoload
-(defcustom isend-send-region-function 'insert-buffer-substring
+(defcustom isend-send-region-function nil
   "Function used by `isend-send' to send a region.
 
-This function takes as argument the name of a buffer containing
-the text to be sent.
+This function is called in a buffer containing the text to be
+sent. It can modify it as needed before it is sent to the
+process.  It also receives as argument the destination buffer,
+in case some interaction with it would be useful.
 
 Possible values include:
-- `insert-buffer-substring' (default)
+- nil (default)
 - `isend--ipython-cpaste'
 - `isend--ipython-paste'"
   :group 'isend)
@@ -167,8 +185,10 @@ Possible values include:
     (set (make-local-variable 'isend-strip-empty-lines)    nil)
     (set (make-local-variable 'isend-delete-indentation)   nil)
     (set (make-local-variable 'isend-end-with-empty-line)  nil)
-    (set (make-local-variable 'isend-send-line-function)   #'insert-buffer-substring)
-    (set (make-local-variable 'isend-send-region-function) #'insert-buffer-substring)))
+    (set (make-local-variable 'isend-bracketed-paste)      nil)
+    (set (make-local-variable 'isend-send-line-function)   nil)
+    (set (make-local-variable 'isend-send-region-function) nil)
+    (set (make-local-variable 'isend-mark-defun-function)  #'mark-defun)))
 
 ;;;###autoload
 (defun isend-default-python-setup ()
@@ -177,8 +197,9 @@ Possible values include:
     (set (make-local-variable 'isend-strip-empty-lines)    t)
     (set (make-local-variable 'isend-delete-indentation)   t)
     (set (make-local-variable 'isend-end-with-empty-line)  t)
-    (set (make-local-variable 'isend-send-line-function)   #'insert-buffer-substring)
-    (set (make-local-variable 'isend-send-region-function) #'insert-buffer-substring)
+    (set (make-local-variable 'isend-bracketed-paste)      t)
+    (set (make-local-variable 'isend-send-line-function)   nil)
+    (set (make-local-variable 'isend-send-region-function) nil)
     (set (make-local-variable 'isend-mark-defun-function)  #'isend--python-mark-defun)))
 
 ;;;###autoload
@@ -188,9 +209,22 @@ Possible values include:
     (set (make-local-variable 'isend-strip-empty-lines)    nil)
     (set (make-local-variable 'isend-delete-indentation)   nil)
     (set (make-local-variable 'isend-end-with-empty-line)  nil)
-    (set (make-local-variable 'isend-send-line-function)   #'insert-buffer-substring)
-    (set (make-local-variable 'isend-send-region-function) #'isend--ipython-cpaste)
+    (set (make-local-variable 'isend-bracketed-paste)      nil)
+    (set (make-local-variable 'isend-send-line-function)   nil)
+    (set (make-local-variable 'isend-send-region-function) #'isend--ipython-paste)
     (set (make-local-variable 'isend-mark-defun-function)  #'isend--python-mark-defun)))
+
+;;;###autoload
+(defun isend-default-julia-setup ()
+  (when (eq major-mode 'julia-mode)
+    (set (make-local-variable 'isend-skip-empty-lines)     t)
+    (set (make-local-variable 'isend-strip-empty-lines)    nil)
+    (set (make-local-variable 'isend-delete-indentation)   nil)
+    (set (make-local-variable 'isend-end-with-empty-line)  nil)
+    (set (make-local-variable 'isend-bracketed-paste)      t)
+    (set (make-local-variable 'isend-send-line-function)   nil)
+    (set (make-local-variable 'isend-send-region-function) nil)
+    (set (make-local-variable 'isend-mark-defun-function)  #'mark-defun)))
 
 
 
@@ -216,10 +250,59 @@ the associated buffer using \\[isend-send] (or `isend-send').
 \\{isend-mode-map}"
   :init-value nil
   :lighter    " Isend"
-  :keymap     '(([C-return] . isend-send)))
+  :keymap     '(([C-return] . isend-send-buffer-switch)
+                ([C-M-return] . switch-to-ipython)))
 
 (defvar isend--command-buffer)
 (make-variable-buffer-local 'isend--command-buffer)
+
+;;;###autoload
+(defun ipython-console ()
+  (interactive)
+  (setq bufname (buffer-name))
+  (setq new-buffer-name (concat (substring bufname 0 -3) "-ipython"))
+  (spacemacs/toggle-maximize-buffer)
+  (split-window-right)
+  (other-window 1)
+  (ansi-term "/bin/bash" new-buffer-name)
+  (setq new-buffer-name (concat "*" new-buffer-name "*"))
+  (if (boundp 'pyvenv-virtual-env-name)
+      (comint-send-string new-buffer-name (concat "conda activate " pyvenv-virtual-env-name " \n")))
+  (comint-send-string new-buffer-name "ipython\n")
+  (other-window 1)
+  (isend (concat "*" new-buffer-name "*"))
+  (setq isend-bracketed-paste t)
+  )
+
+(defun kill-ipython ()
+  (interactive)
+  (setq bufname (buffer-name))
+  (setq attached-buffer-name (concat "*" (substring bufname 0 -3) "-ipython*"))
+  (kill-buffer attached-buffer-name)
+  )
+
+(defun isend-send-buffer-switch ()
+  (interactive)
+  (switch-to-ipython)
+  (isend-send)
+  (switch-to-ipython)
+  )
+
+(defun switch-to-ipython ()
+  (interactive)
+  (setq bufname (buffer-name))
+  (setq attached-buffer-name (concat "*" (substring bufname 0 -3) "-ipython*"))
+  (if (get-buffer attached-buffer-name)
+      (progn
+        (if (eq (length (window-list)) 1)
+            (split-window-right))
+        (other-window 1)
+        (switch-to-buffer attached-buffer-name)
+        (end-of-buffer)
+        (other-window 1))
+    (error "No ipython buffer associated")
+    )
+  )
 
 ;;;###autoload
 (defun isend-associate (buffername)
@@ -235,73 +318,96 @@ This should usually be something like '*ansi-term*' or '*terminal*'."
 
 
 (defun isend-send ()
- "Send the current line to a terminal.
+  "Send the current line to a terminal.
 Use `isend-associate' to set the associated terminal buffer. If
 the region is active, all lines spanned by it are sent."
- (interactive)
- (isend--check)
+  (interactive)
+  (isend--check)
 
- (let* ((region-active (region-active-p))
+  (let* ((region-active (region-active-p))
 
-        ;; The region to be sent
-        (bds   (isend--region-boundaries))
-        (begin (car bds))
-        (end   (cdr bds))
+         ;; The region to be sent
+         (bds   (isend--region-boundaries))
+         (begin (car bds))
+         (end   (cdr bds))
 
-        ;; Configuration variables values need to be taken from
-        ;; the origin buffer (they are potentially local)
-        (isend-strip-empty-lines-1    isend-strip-empty-lines)
-        (isend-delete-indentation-1   isend-delete-indentation)
-        (isend-end-with-empty-line-1  isend-end-with-empty-line)
-        (isend-send-region-function-1 isend-send-region-function)
-        (isend-send-line-function-1   isend-send-line-function)
+         ;; case where a single symbol or expression is selected
+         (single-line-1 (= (line-number-at-pos begin) (line-number-at-pos end)))
 
-        ;; Buffers involved
-        (origin (current-buffer))
-        (destination isend--command-buffer)
-        filtered)
+         (single-symbol-1 (and single-line-1
+                               (or (/= (line-beginning-position) begin)
+                                   (/= (line-end-position) end))))
 
-   ;; A temporary buffer is used to apply filters
-   (with-temp-buffer
-     (setq filtered (current-buffer))
-     (insert-buffer-substring origin begin end)
+         ;; Configuration variables values need to be taken from
+         ;; the origin buffer (they are potentially local)
+         (isend-strip-empty-lines-1    isend-strip-empty-lines)
+         (isend-delete-indentation-1   isend-delete-indentation)
+         (isend-end-with-empty-line-1  isend-end-with-empty-line)
+         (isend-send-region-function-1 isend-send-region-function)
+         (isend-send-line-function-1   isend-send-line-function)
+         (isend-bracketed-paste-1      isend-bracketed-paste)
 
-     ;; Apply filters on the region
-     (when region-active
-       (when isend-strip-empty-lines-1
-         (delete-matching-lines "^[[:space:]]*$" (point-min) (point-max)))
+         ;; Buffers involved
+         (origin (current-buffer))
+         (destination (get-buffer isend--command-buffer)))
 
-       (when isend-delete-indentation-1
-         (goto-char (point-min))
-         (back-to-indentation)
-         (indent-rigidly (point-min) (point-max) (- (current-column))))
+    ;; A temporary buffer is used to apply filters
+    (with-temp-buffer
+      (insert-buffer-substring origin begin end)
 
-       (when isend-end-with-empty-line-1
-         (goto-char (point-max))
-         (insert "\n")))
+      ;; Phase 1 - Apply filters on the region
+      (when region-active
+        (when isend-strip-empty-lines-1
+          (delete-matching-lines "^[[:space:]]*$" (point-min) (point-max)))
 
-     ;; Actually insert the region into the associated buffer
-     (with-current-buffer destination
-       (goto-char (process-mark (get-buffer-process (current-buffer))))
+        (when isend-delete-indentation-1
+          (goto-char (point-min))
+          (back-to-indentation)
+          (indent-rigidly (point-min) (point-max) (- (current-column))))
 
-       (if region-active
-           (funcall isend-send-region-function-1 filtered)
-         (funcall isend-send-line-function-1 filtered))
+        (when isend-end-with-empty-line-1
+          (goto-char (point-max))
+          (insert "\n")))
 
-       (cond
-        ;; Terminal buffer: specifically call `term-send-input'
-        ;; to handle both the char and line modes of `ansi-term'.
-        ((eq major-mode 'term-mode)
-         (term-send-input))
+      (if region-active
+          (and isend-send-region-function-1
+               (funcall isend-send-region-function-1 destination))
+        (and isend-send-line-function-1
+             (funcall isend-send-line-function-1 destination)))
 
-        ;; Other buffer: call whatever is bound to 'RET'
-        (t
-         (funcall (key-binding (kbd "RET"))))))))
+      (when isend-bracketed-paste-1
+        (goto-char (point-min)) (insert "\e[200~")
+        (goto-char (point-max)) (insert "\n\e[201~"))
 
- ;; Move point to the next line
- (if (not (region-active-p))
-     (when isend-forward-line
-       (isend--next-line))))
+      ;; Phase 2 - Actually send the region to the associated buffer
+      (let ((filtered (current-buffer)))
+        (with-current-buffer destination
+          ;; Move to the process mark if there is one
+          (if-let ((process (get-buffer-process (current-buffer))))
+              (goto-char (process-mark process)))
+
+          ;; Insert the contents
+          (let ((inhibit-read-only t))
+            (insert-buffer-substring filtered))
+
+          (cond
+           ;; Terminal buffer: specifically call `term-send-input'
+           ;; to handle both the char and line modes of `ansi-term'.
+           ((eq major-mode 'term-mode)
+            (term-send-input))
+
+           ;; Other buffer: call whatever is bound to 'RET'
+           (t
+            (funcall (key-binding (kbd "RET"))))))))
+
+    (when (and single-line-1 (not single-symbol-1))
+      (progn (deactivate-mark) (isend--next-line)))
+
+    ;; Move point to the next line
+    ;; (when (and isend-forward-line (not single-symbol-1))
+    ;;   )
+    )
+  )
 
 
 (defun isend-send-buffer ()
@@ -360,14 +466,19 @@ The region is expanded so that no line is only partially sent."
          (beg (car bds))
          (end (cdr bds)))
 
-    ;; Expand the region to span whole lines
-    ;; (goto-char beg)
-    ;; (setq beg (line-beginning-position))
-    ;; (goto-char end)
-    ;; (setq end (line-end-position))
-    ;; (when (= beg (point-max))
-    ;;   (error "Nothing more to send!"))
-    (cons beg (+ end 1))))
+    ;; Expand the region to span whole lines only if it is a multi-line region
+    ;; or there is no region at all
+    (setq do-expansion (or (/= (line-number-at-pos beg) (line-number-at-pos end))
+                           (= beg end)))
+    (if do-expansion
+        (progn (goto-char beg)
+               (setq beg (line-beginning-position))
+               (goto-char end)
+               (setq end (line-end-position))
+               (when (= beg (point-max))
+                 (error "Nothing more to send!"))
+               (cons beg end))
+      (cons beg (+ end 1)))))
 
 (defun isend--next-line ()
   "Move point to the next line.
@@ -378,22 +489,17 @@ Empty lines are skipped if `isend-skip-empty-lines' is non-nil."
         (goto-char (line-beginning-position)))
     (beginning-of-line 2)))
 
-(defun isend--term-send-input ()
-  (term-send-input)
-  (sit-for 0.01)
-  (goto-char (process-mark (get-buffer-process (current-buffer)))))
-
-(defun isend--ipython-cpaste (buf-name)
+(defun isend--ipython-cpaste (destination)
   ""
-  (insert "%cpaste\n") (isend--term-send-input)
-  (insert-buffer-substring buf-name) (isend--term-send-input)
-  (insert "--"))
+  (term-send-string (get-buffer-process destination) "%cpaste\n")
+  (with-current-buffer destination (term-send-input))
+  (sleep-for 0.1)
+  (goto-char (point-max)) (insert "\n--"))
 
-(defun isend--ipython-paste (buf-name)
+(defun isend--ipython-paste (destination)
   ""
-  (with-current-buffer buf-name
-    (clipboard-kill-ring-save (point-min) (point-max)))
-  (insert "%paste"))
+  (clipboard-kill-ring-save (point-min) (point-max))
+  (erase-buffer)(insert "%paste"))
 
 (defun isend--python-mark-defun ()
   "Mark the current top-level python block.
