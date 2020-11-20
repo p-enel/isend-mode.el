@@ -270,7 +270,7 @@ the associated buffer using \\[isend-send] (or `isend-send').
       (comint-send-string new-buffer-name (concat "conda activate " pyvenv-virtual-env-name " \n")))
   (comint-send-string new-buffer-name "ipython\n")
   (other-window 1)
-  (isend (concat "*" new-buffer-name "*"))
+  (isend new-buffer-name)
   (setq isend-bracketed-paste t)
   )
 
