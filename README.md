@@ -1,8 +1,9 @@
 # isend-mode [![MELPA](http://melpa.milkbox.net/packages/isend-mode-badge.svg)](http://melpa.milkbox.net/#/isend-mode)
 
-`isend-mode` is an Emacs extension allowing interaction with code interpreters in `ansi-term` or
-`term` buffers. Some language-specific modes (e.g. `python.el`) already provide similar features;
-`isend-mode` does the same in a language-agnostic way.
+`isend-mode` is an Emacs extension allowing interaction with code interpreters
+in `ansi-term`/`term` or `vterm` buffers. Some language-specific modes
+(e.g. `python.el`) already provide similar features; `isend-mode` does the same
+in a language-agnostic way.
 
 ![screencast](http://ffevotte.github.com/isend-mode.el/screencast/screencast.svg)
 
@@ -28,7 +29,7 @@ Then, add the following lines in your Emacs initialization file (`.emacs` or `.e
 
 ```lisp
 (add-to-list 'load-path "/path/to/isend-mode")
-(require 'isend)
+(require 'isend-mode)
 ```
 
 
@@ -47,9 +48,9 @@ else) and `term` would have worked as well.
 
 
 2. Open a buffer with the code you want to execute, and associate it to the interpreter buffer using
-   the `isend-associate` command. For example:
+   the `isend-associate` command (or `isend`, which is a shorter alias). For example:
 
-   `M-x isend-associate RET *ansi-term* RET`
+   `M-x isend RET *ansi-term* RET`
 
 
 3. Hitting <kbd>C-RET</kbd> will send the current line to the interpreter. If a region is active, all lines
@@ -107,17 +108,24 @@ The variables which can be set to customize `isend`'s behaviour are:
 - `isend-end-with-empty-line`: if non-nil, `isend` appends an empty line to regions sent. Note that
   this only works when sending an entire region (as opposed to a single line).
 
-- `isend-send-line-function` and `isend-send-region-function`: these are the functions called by
-  `isend` to send a line or a region respectively. These functions take as argument the name of a
-  buffer containing the text to be sent, and are responsible for copying this text to the
-  interpreter buffer.
+- `isend-bracketed-paste`: if non-nil, `isend` uses [bracketed
+  paste](https://cirw.in/blog/bracketed-paste). In short, this means it surrounds the contents
+  it sends with escape sequences indicating the underlying process that this
+  content is being pasted. Some interpreters (*e.g.* the Julia REPL) use this in meaningful ways.
+
+- `isend-send-line-function` and `isend-send-region-function`: if set, these are
+  the functions called by `isend` to send a line or a region respectively. These
+  functions are called in a buffer containing the text to be sent. They can
+  modify it as needed before it is sent to the process. These functions also
+  receive as argument the destination buffer, in case some interaction with it
+  would be useful.
 
   Possible values include:
 
-  - `insert-buffer-substring` (default) : simply insert the text into the buffer.
-  - `isend--ipython-paste` : copy the text to the clipoard, and evaluate `%paste` in the interpreter
-    buffer (where an `iPython` process is supposed to be running).
-  - `isend--ipython-cpaste` : insert the text within a `%cpaste` command (an `iPython` processes
+  - `nil` (default): do nothing (the contents will be sent as they are)
+  - `isend--ipython-paste`: copy the contents to the clipoard, and send `%paste` to the interpreter
+        buffer (where an `iPython` process is supposed to be running).
+  - `isend--ipython-cpaste`: wrap the contents within a `%cpaste` command (an `iPython` processes
     is supposed to be running in the associated buffer).
 
 - `isend-mark-defun`: a function that will mark the current "defun" to be sent
@@ -137,11 +145,15 @@ A few helpers are provided to help setup `isend` when working with multiple lang
 ;; If you work with shell scripts
 (add-hook 'isend-mode-hook 'isend-default-shell-setup)
 
-;; If you work with python scripts using the default python interpreter
+;; If you work with python scripts, one of those could be used (but not both!)
+;;   - default python interpreter
 (add-hook 'isend-mode-hook 'isend-default-python-setup)
 
-;; If you work with python scripts using iPython
+;;   - specific setup for iPython
 (add-hook 'isend-mode-hook 'isend-default-ipython-setup)
+
+;; If you work with julia
+(add-hook 'isend-mode-hook 'isend-default-julia-setup)
 ```
 
 
@@ -155,6 +167,7 @@ URL is:
 
 
 Many thanks go to the following contributors:
+- [Soumya Tripathy](https://github.com/Blade6570): vterm support
 - [James Porter](https://github.com/porterjamesj): empty lines handling;
 - [@albertstartup](https://github.com/albertstartup): handling newer version of
   iPython.
@@ -162,7 +175,7 @@ Many thanks go to the following contributors:
 
 ## License
 
-Copyright (C) 2012 François Févotte.
+Copyright (C) 2012-2019 François Févotte.
 
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU
 General Public License as published by the Free Software Foundation, either version 3 of the

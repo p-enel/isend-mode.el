@@ -4,6 +4,7 @@
 ;; Author:  François Févotte <fevotte@gmail.com>
 ;; URL:     https://github.com/ffevotte/isend-mode.el
 ;; Package-Version: 20190201.832
+;; Package-Commit: 38ace354d579eb364d4f95b9ea16081c171ea604
 ;; Version: 0.2
 
 ;; This file is NOT part of Emacs.
@@ -377,7 +378,7 @@ the region is active, all lines spanned by it are sent."
 
       (when isend-bracketed-paste-1
         (goto-char (point-min)) (insert "\e[200~")
-        (goto-char (point-max)) (insert "\n\e[201~"))
+        (goto-char (point-max)) (insert "\e[201~"))
 
       ;; Phase 2 - Actually send the region to the associated buffer
       (let ((filtered (current-buffer)))
@@ -491,8 +492,7 @@ Empty lines are skipped if `isend-skip-empty-lines' is non-nil."
 
 (defun isend--ipython-cpaste (destination)
   ""
-  (term-send-string (get-buffer-process destination) "%cpaste\n")
-  (with-current-buffer destination (term-send-input))
+  (isend--send-dest "%cpaste" destination)
   (sleep-for 0.1)
   (goto-char (point-max)) (insert "\n--"))
 
@@ -517,6 +517,47 @@ indentation."
   (push-mark (point))
   (python-nav-end-of-block)
   (exchange-point-and-mark))
+
+
+;; Supported destination buffer types
+
+(defun isend--send-dest (contents destination)
+  (with-current-buffer destination
+    (cond
+     ((eq major-mode 'term-mode)
+      (isend--send-dest-term contents))
+     ((eq major-mode 'vterm-mode)
+      (isend--send-dest-vterm contents))
+     (t
+      (isend--send-dest-default contents)))))
+
+(defun isend--send-dest-default (contents)
+  ;; Move to the process mark if there is one
+  (if-let ((process (get-buffer-process (current-buffer))))
+      (goto-char (process-mark process)))
+
+  ;; Insert the contents
+  (let ((inhibit-read-only t))
+    (insert contents))
+
+  ;; Other buffer: call whatever is bound to 'RET'
+  (funcall (key-binding (kbd "RET"))))
+
+(defun isend--send-dest-term (contents)
+  ;; Move to the process mark
+  (goto-char (process-mark (get-buffer-process (current-buffer))))
+
+  ;; Insert the contents
+  (let ((inhibit-read-only t))
+    (insert contents))
+
+  ;; Send input
+  (term-send-input))
+
+(defun isend--send-dest-vterm (contents)
+  (vterm-send-string contents)
+  (vterm-send-return))
+
 
 (provide 'isend-mode)
 
