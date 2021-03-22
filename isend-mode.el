@@ -378,7 +378,7 @@ the region is active, all lines spanned by it are sent."
 
       (when isend-bracketed-paste-1
         (goto-char (point-min)) (insert "\e[200~")
-        (goto-char (point-max)) (insert "\e[201~"))
+        (goto-char (point-max)) (insert "\n\e[201~"))
 
       ;; Phase 2 - Actually send the region to the associated buffer
       (let ((filtered (current-buffer)))
